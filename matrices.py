@@ -7,7 +7,7 @@ Matrices de rotación 3D fundamentales + rotación arbitraria (Rodrigues).
 import numpy as np
 
 
-# ── Rotaciones fundamentales ────────────────────────────────────────────────
+# ── Rotaciones fundamentales 
 
 def Rx(deg):
     """Rotación alrededor del eje X."""
@@ -31,7 +31,7 @@ def Rz(deg):
                      [0,          0,          1]])
 
 
-# ── Rotación alrededor de eje arbitrario (fórmula de Rodrigues) ─────────────
+# ── Rotación alrededor de eje arbitrario (fórmula de Rodrigues) 
 
 def R_arbitrary(axis, deg):
     """
@@ -58,7 +58,7 @@ def R_arbitrary(axis, deg):
     return c * np.eye(3) + (1 - c) * np.outer(u, u) + s * skew
 
 
-# ── Demo ────────────────────────────────────────────────────────────────────
+# ── tests básicos de las matrices
 
 if __name__ == "__main__":
     np.set_printoptions(precision=4, suppress=True)

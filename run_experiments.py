@@ -7,7 +7,7 @@ def run_benchmark():
     # --- Configuración del Experimento ---
     objects = ["cube", "sphere", "sklearn"]
     # n_points = 50000  # Usamos muchos puntos para que el paralelismo valga la pena
-    n_points = 1_000_000
+    n_points = 10_000_000
     process_counts = [1, 2, 4, 8]
     csv_file = "benchmark_results.csv"
 
@@ -44,17 +44,17 @@ def plot_results(csv_path):
         subset = df[df['objeto'] == obj]
         
         # Referencia serial (T para p=1)
-        t_serial = subset[subset['n_procesos'] == 1]['total_ms'].values[0]
+        t_serial = subset[subset['n_procs'] == 1]['total_ms'].values[0]
         
         # Calcular Speedup (T_serial / T_paralelo)
         subset = subset.copy()
         subset['speedup'] = t_serial / subset['total_ms']
 
         # Gráfica 1: Tiempo Total
-        ax1.plot(subset['n_procesos'], subset['total_ms'], marker='o', label=f'{obj}')
+        ax1.plot(subset['n_procs'], subset['total_ms'], marker='o', label=f'{obj}')
         
         # Gráfica 2: Speedup
-        ax2.plot(subset['n_procesos'], subset['speedup'], marker='s', label=f'{obj}')
+        ax2.plot(subset['n_procs'], subset['speedup'], marker='s', label=f'{obj}')
 
     # Configurar Eje de Tiempos
     ax1.set_title("Tiempo de Ejecución vs Procesos")
@@ -64,7 +64,7 @@ def plot_results(csv_path):
     ax1.legend()
 
     # Configurar Eje de Speedup
-    ax2.set_line = ax2.plot(df['n_procesos'].unique(), df['n_procesos'].unique(), 
+    ax2.set_line = ax2.plot(df['n_procs'].unique(), df['n_procs'].unique(), 
                             color='black', linestyle=':', label='Ideal')
     ax2.set_title("Speedup (Escalabilidad)")
     ax2.set_xlabel("Número de Procesos (p)")
