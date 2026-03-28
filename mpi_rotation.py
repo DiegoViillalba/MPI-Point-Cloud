@@ -10,30 +10,59 @@ import argparse
 import time
 import os
 import csv
+import matplotlib.pyplot as plt
 from mpi4py import MPI
 from matrices import Rx, Ry, Rz, R_arbitrary
 from clouds import make_cube, make_sphere, make_sklearn
 
+def plot_comparison(original, rotated, title="Rotación 3D"):
+    fig = plt.subplots(1, 2, figsize=(12, 5), subplot_kw={'projection': '3d'})
+    fig, (ax1, ax2) = fig # Desempaquetado para claridad
+
+    # Gráfica Antes
+    ax1.scatter(original[:, 0], original[:, 1], original[:, 2], c='blue', alpha=0.6)
+    ax1.set_title("Original")
+    ax1.set_xlabel("X"); ax1.set_ylabel("Y"); ax1.set_zlabel("Z")
+    
+    # Gráfica Después
+    ax2.scatter(rotated[:, 0], rotated[:, 1], rotated[:, 2], c='red', alpha=0.6)
+    ax2.set_title(f"Resultado {title}")
+    ax2.set_xlabel("X"); ax2.set_ylabel("Y"); ax2.set_zlabel("Z")
+
+    # Mantener los ejes proporcionales para no deformar el cubo
+    for ax in [ax1, ax2]:
+        max_range = np.array([original.max()-original.min(), 
+                             original.max()-original.min(), 
+                             original.max()-original.min()]).max() / 2.0
+        mid_x = (original[:,0].max()+original[:,0].min()) * 0.5
+        mid_y = (original[:,1].max()+original[:,1].min()) * 0.5
+        mid_z = (original[:,2].max()+original[:,2].min()) * 0.5
+        ax.set_xlim(mid_x - max_range, mid_x + max_range)
+        ax.set_ylim(mid_y - max_range, mid_y + max_range)
+        ax.set_zlim(mid_z - max_range, mid_z + max_range)
+
+    plt.tight_layout()
+    plt.show()
+
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--object",  choices=["cube","sphere","sklearn"], default="cube")
+    parser.add_argument("--object",  choices=["cube","sphere","sklearn"], default="sklearn")
     parser.add_argument("--axis",    choices=["x","y","z","arbitrary"],   default="z")
     parser.add_argument("--angle",   type=float, default=45.0)
     parser.add_argument("--n",       type=int,   default=None)
-    parser.add_argument("--performance", action="store_true", help="Guarda métricas en CSV")
+    parser.add_argument("--performance", action="store_true")
+    parser.add_argument("--plot", action="store_true", help="Mostrar gráfica al finalizar")
     args = parser.parse_args()
 
     comm = MPI.COMM_WORLD
     rank = comm.Get_rank()
     size = comm.Get_size()
 
-    # 1. Preparar Matriz (Todos los procesos)
     R_map = {"x": Rx, "y": Ry, "z": Rz}
     R = R_arbitrary([1, 1, 0], args.angle) if args.axis == "arbitrary" else R_map[args.axis](args.angle)
 
-    # 2. Generación y Sincronización (Solo Rank 0 mide tiempo total)
     points = None
-    t_start = 0
+    original_full = None # Guardar copia completa para graficar
     
     if rank == 0:
         if args.object == "cube":
@@ -43,17 +72,12 @@ def main():
         elif args.object == "sklearn":
             points = make_sklearn(args.n or 500)
         
-        n_points = len(points)
-        print(f"[*] Iniciando: {args.object} ({n_points} pts) con {size} procesos.")
-        t_start = time.perf_counter()
-    else:
-        n_points = None
+        if args.plot:
+            original_full = points.copy()
+        
+        print(f"[*] Procesando {args.object} con {size} procesos...")
 
-    # Compartir el número de puntos con todos (opcional, para logging)
-    n_points = comm.bcast(n_points, root=0)
-
-    # 3. Distribución (Scatter)
-    t_comm_start = time.perf_counter()
+    # Scatter
     if rank == 0:
         chunks = np.array_split(points, size)
         local_data = chunks[0]
@@ -62,45 +86,28 @@ def main():
     else:
         local_data = comm.recv(source=0, tag=0)
     
-    # 4. Cómputo (Todos los procesos)
-    t_comp_start = time.perf_counter()
+    # Cómputo
     local_rot = local_data @ R.T
-    t_comp_end = time.perf_counter()
     
-    # 5. Recolección (Gather)
+    # Gather
     if rank == 0:
         results_list = [local_rot]
         for src in range(1, size):
             results_list.append(comm.recv(source=src, tag=1))
         final_result = np.vstack(results_list)
         
-        t_end = time.perf_counter()
-        
-        # --- Cálculos de Benchmark ---
-        total_ms = (t_end - t_start) * 1000
-        comp_ms = (t_comp_end - t_comp_start) * 1000
-        comm_ms = total_ms - comp_ms # Tiempo que no fue cálculo puro
+        print("[+] Rotación completada.")
 
-        print(f"[+] Finalizado en {total_ms:.3f}ms (Cómputo: {comp_ms:.3f}ms)")
-
-        # 6. Guardar en CSV si el flag está activo
-        if args.performance:
-            csv_file = "benchmark_results.csv"
-            file_exists = os.path.isfile(csv_file)
-            
-            with open(csv_file, mode='a', newline='') as f:
-                writer = csv.writer(f)
-                if not file_exists:
-                    writer.writerow(["objeto", "n_puntos", "n_procesos", "total_ms", "comp_ms", "comm_ms"])
-                writer.writerow([args.object, n_points, size, round(total_ms, 4), round(comp_ms, 4), round(comm_ms, 4)])
-            print(f"[!] Datos guardados en {csv_file}")
+        if args.plot:
+            print("[*] Abriendo visualización...")
+            plot_comparison(original_full, final_result, f"({args.axis.upper()} {args.angle}°)")
             
         np.save("rotated_output.npy", final_result)
     else:
         comm.send(local_rot, dest=0, tag=1)
 
     MPI.Finalize()
-
+ 
 if __name__ == "__main__":
     main()
 
